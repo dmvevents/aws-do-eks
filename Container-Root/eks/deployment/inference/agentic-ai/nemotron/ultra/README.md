@@ -55,20 +55,34 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/download
 
 The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet]() manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` in the corresponding `.env` file per your preference. Valid values, as accepted by `run.sh`:
 
-| `MANIFEST_TYPE` | Topology | P/D disaggregated? |
-|---|---|---|
-| `deployment` | one instance on one node | only in `disagg/` |
-| `lws` | one instance across two nodes (LeaderWorkerSet) | only in `disagg/` |
-| `lws-pp` | pipeline-parallel across two nodes (`disagg/` only) | yes |
-| `lws-ep` | wide expert parallelism across two nodes, `EP = EP_DP_SIZE x GPU_PER_WORKER` | **no — always aggregated** |
-| `dgd` | DynamoGraphDeployment, managed by the Dynamo operator | only in `disagg/` |
+| `MANIFEST_TYPE` | Topology | Folder | P/D disaggregated? |
+|---|---|---|---|
+| `deployment` | one instance on one node, `TP=GPU_PER_WORKER`/`PP=1` per role | `agg/`, `disagg/` | only in `disagg/` |
+| `lws` | one instance across two nodes (LeaderWorkerSet), `PP=2` per role | `agg/`, `disagg/` | only in `disagg/` |
+| `lws-2pp` | prefill `PP=2` (2 nodes) + decode 2× `PP=1` single-node groups | `disagg/` | yes |
+| `lws-pp2` | symmetric `PP=2` on both prefill and decode (2 nodes each) | `disagg/` | yes |
+| `lws-ep` | wide expert parallelism, `EP = EP_DP_SIZE x GPU_PER_WORKER`, one `vllm serve` | `agg/` | **no — aggregated** |
+| `lws-ep-pd` | expert parallelism **and** a P/D split: one EP group per role, `2 x EP_DP_SIZE` nodes | `disagg/` | yes |
+| `dgd` | DynamoGraphDeployment, managed by the Dynamo operator | `agg/`, `disagg/` | only in `disagg/` |
 
-Note on `lws-ep`: it exists in **both** `agg/` and `disagg/`, but in both places it renders a single
-aggregated `vllm serve` with expert parallelism — there is no prefill/decode split and no
-`--kv-transfer-config`, so no KV cache moves over the fabric. The copy under `disagg/` is the
-parameterized/portable variant of the same aggregated topology, not a disaggregated one. Report
-benchmark results from either copy as **EP16 aggregated**; only `lws`, `lws-pp`, `deployment` and
-`dgd` under `disagg/` are P/D disaggregated.
+`lws-pp` (prefill `PP=2` + decode 2× `PP=1`) is superseded by `lws-2pp`, which is the same topology
+maintained forward. It still renders, so older runs remain reproducible; prefer `lws-2pp` /
+`lws-pp2` for new work.
+
+Note on `lws-ep` — it is **aggregated, and now lives only in `agg/`**. It renders a single
+`vllm serve` with expert parallelism: no prefill/decode split, no `--kv-transfer-config`, so no KV
+cache moves over the fabric, and a running pod logs no `NIXL` / `KV Transfer metrics` lines. It used
+to be duplicated under `disagg/`, where the folder name alone got its numbers reported as "disagg"
+once; that copy has been removed and `disagg/run.sh` now prints where to go instead if your `.env`
+still selects it. Report results from `agg/lws-ep` as **EP16 aggregated**.
+
+Expert parallelism *with* a prefill/decode split is a real configuration, and it is `lws-ep-pd`
+under `disagg/`: EP and disagg are orthogonal, so each role gets its own EP group (its own DP
+coordinator, `--enable-expert-parallel` and `--disaggregation-mode` on both). Two fabrics are then
+in play at once — KV prefill→decode per **request** over NIXL/EFA, and the MoE expert all-to-all per
+**token** over NCCL/EFA — which is why its inter-token latency is not comparable to the `PP` shapes;
+compare on ITL and p50 TTFT at equal GPU count. See the template header for what is measured about
+that topology and what you still need to gate yourself.
 
 ### Aggregated mode
 

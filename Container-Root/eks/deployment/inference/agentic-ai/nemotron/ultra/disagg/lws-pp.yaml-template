@@ -4,6 +4,13 @@
 #
 # Author: Anton Alexander
 #
+# >>> SUPERSEDED BY lws-2pp.yaml-template — FROZEN, kept only to reproduce older runs. <<<
+# lws-2pp is this same topology maintained forward. This file is deliberately NOT tracking the
+# newer template: in particular it does NOT carry the NVFP4 cold-start warmup or
+# VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, so an NVFP4 benchmark launched from here still pays the
+# ~4min Mamba-decode Triton JIT on its opening (that is the behaviour older runs were measured
+# with, which is the point of keeping it). Use MANIFEST_TYPE=lws-2pp for new work.
+#
 # Topology (4 GPU nodes + 1 CPU node - the CPU node is preferred, not required):
 #   - prefill: 1 LWS group of size 2 -> TP=${GPU_PER_WORKER} PP=2 across 2 nodes
 #              (Ray distributed executor, Ray V2 executor backend)
