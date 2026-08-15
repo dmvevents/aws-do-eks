@@ -53,7 +53,22 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/download
 
 ## Deploy the model
 
-The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet]() manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` to `deployment` or `lws` in the corresponding `.env` file per your preference.
+The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet]() manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` in the corresponding `.env` file per your preference. Valid values, as accepted by `run.sh`:
+
+| `MANIFEST_TYPE` | Topology | P/D disaggregated? |
+|---|---|---|
+| `deployment` | one instance on one node | only in `disagg/` |
+| `lws` | one instance across two nodes (LeaderWorkerSet) | only in `disagg/` |
+| `lws-pp` | pipeline-parallel across two nodes (`disagg/` only) | yes |
+| `lws-ep` | wide expert parallelism across two nodes, `EP = EP_DP_SIZE x GPU_PER_WORKER` | **no — always aggregated** |
+| `dgd` | DynamoGraphDeployment, managed by the Dynamo operator | only in `disagg/` |
+
+Note on `lws-ep`: it exists in **both** `agg/` and `disagg/`, but in both places it renders a single
+aggregated `vllm serve` with expert parallelism — there is no prefill/decode split and no
+`--kv-transfer-config`, so no KV cache moves over the fabric. The copy under `disagg/` is the
+parameterized/portable variant of the same aggregated topology, not a disaggregated one. Report
+benchmark results from either copy as **EP16 aggregated**; only `lws`, `lws-pp`, `deployment` and
+`dgd` under `disagg/` are P/D disaggregated.
 
 ### Aggregated mode
 

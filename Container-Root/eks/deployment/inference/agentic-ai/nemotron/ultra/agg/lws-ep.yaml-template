@@ -25,7 +25,7 @@
 # IMAGE: the golden image (../.env — covers agg/EP16/PP>1 + the NVFP4 cubin fix).
 # For NVFP4 set MODEL_VARIANT=NVFP4 in ../.env (MODEL_PATH/NAME switch automatically).
 #
-# RENDER: MANIFEST_TYPE=ep ./run.sh   (run.sh envsubst's this + kubectl apply)
+# RENDER: MANIFEST_TYPE=lws-ep ./run.sh   (run.sh envsubst's this + kubectl apply)
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1

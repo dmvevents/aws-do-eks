@@ -1,8 +1,21 @@
 # =============================================================================
-# Nemotron-3 Ultra EP16 — expert-parallel aggregated serving (DP2 x TP8 = EP16)
+# Nemotron-3 Ultra EP16 — expert-parallel AGGREGATED serving (DP2 x TP8 = EP16)
 # =============================================================================
 #
 # Author: Anton Alexander
+#
+# >>> THIS PERMUTATION IS AGGREGATED, DESPITE LIVING IN disagg/. <<<
+# It renders ONE `vllm serve` with no prefill/decode split. Grep this file: there is no
+# --kv-transfer-config, no NixlConnector, no --disaggregation-mode. So no KV cache crosses
+# the fabric here, and a running pod shows zero `NIXL` / `KV Transfer metrics` log lines
+# (the disagg siblings lws / lws-pp / deployment / dgd show both).
+#   -> When reporting aiperf/benchmark numbers from this template, label them EP16
+#      AGGREGATED. Labelling them "disagg" because of the folder name is a real trap that
+#      has already happened once.
+#   -> EFA is still exercised hard, just not by NIXL: the expert all-to-all is NCCL over
+#      EFA on every token (see the all2all note below).
+# For actual P/D disaggregation on this model use the siblings in this folder:
+#   MANIFEST_TYPE=lws (PP2/PP2) | lws-pp | deployment | dgd — all carry --kv-transfer-config.
 #
 # The MoE expert layers are sharded 16 ways across 2 nodes (EFA NCCL all-to-all);
 # each data-parallel rank is one full TP8 node. vLLM's OpenAI server runs on the
@@ -12,6 +25,17 @@
 #
 # This is the AGGREGATED expert-parallel permutation - no prefill/decode split,
 # no Dynamo platform required (the vllm leader serves OpenAI API directly).
+#
+# all2all note (why per-token cost differs from the disagg siblings): vLLM's default EP
+# backend here is allgather/reduce-scatter — the pod logs it as
+#   cuda_communicator.py  Using AgRsAll2AllManager all2all manager
+#   expert_map_manager.py [EP Rank 0/16] ... Local/global number of experts: 32/512
+# so EVERY MoE layer of EVERY token allgathers activations across all EP ranks and
+# reduce-scatters back, and half those ranks are on the other node -> cross-node traffic is
+# in the per-TOKEN path. The disagg siblings instead pay one KV transfer per REQUEST and
+# keep the expert compute inside one NVLink domain. Expect the two to differ on
+# inter-token latency for that structural reason; compare them on ITL and p50 TTFT, and at
+# equal GPU count (this template = EP_DP_SIZE x GPU_PER_WORKER GPUs).
 #
 # PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200): the podAntiAffinity selector
 # matches only the GPU role (component In [ep-agg]) rather than every pod carrying
